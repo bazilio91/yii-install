@@ -1,6 +1,6 @@
 #!/usr/bin/php
 <?php
-define('BASE_DIR', realpath(__DIR__));
+define('BASE_DIR', dirname(__FILE__));
 
 /**
  * List of directories to create
@@ -11,7 +11,8 @@ $dirs = array(
 	'www' => 0750,
 	'www/assets' => 0770,
 	'www/storage' => 0770,
-	'protected' => 0770,
+	'protected' => 0750,
+	'protected/runtime' => 0770,
 );
 /**
  * List of git submodules
@@ -27,18 +28,31 @@ $gitModules = array(
  * DB
  */
 $db = array(
-	'db' => array(
-		'class' => 'CDbConnection',
-		'connectionString' => 'mysql:host=127.0.0.1;dbname=decor',
-		'emulatePrepare' => true,
-		'username' => 'root',
-		'password' => '31415',
-		'charset' => 'utf8',
-		'schemaCachingDuration' => 0,
-		'enableProfiling' => true,
-		'enableParamLogging' => true,
-		'tablePrefix' => '',
-	),
+	'class' => 'CDbConnection',
+	'connectionString' => 'mysql:host=127.0.0.1;dbname=decor',
+	'emulatePrepare' => true,
+	'username' => 'root',
+	'password' => '31415',
+	'charset' => 'utf8',
+	'schemaCachingDuration' => 0,
+	'enableProfiling' => true,
+	'enableParamLogging' => true,
+	'tablePrefix' => '',
+);
+/**
+ * Routes
+ */
+$routes = array(
+	'gii' => 'gii',
+	'gii/<controller:\w+>' => 'gii/<controller>',
+	'gii/<controller:\w+>/<action:\w+>' => 'gii/<controller>/<action>',
+
+	'login/' => 'site/login',
+	'logout/' => 'site/logout',
+
+	"http://$domain/file/<_a:\w+>/*" => 'file/<_a>',
+
+	'' => 'site/index',
 );
 /**
  * Params
@@ -166,7 +180,7 @@ foreach ($gitModules as $dir => $data) {
 	if ($tag) {
 		echo "Checkout $tag tag for $url\n";
 		chdir($dir);
-		exec('git fetch --tags && git checkout ' . escapeshellarg($tag), $output, $code);
+		exec('git fetch --tags --quiet && git checkout --quiet ' . escapeshellarg($tag), $output, $code);
 		if ($code !== 0) {
 			InstallHelper::processOutput($output);
 			echo "Failed to checkout tag $tag for submodule $url.\n";
@@ -208,15 +222,28 @@ if (!is_file('www/index.php')) {
 }
 
 
+/**
+ * Generate configs
+ */
 file_put_contents('protected/config/.gitignore', "params.php\ndb.php\n");
 $configText = var_export($config, true);
 $configText = "<?php\n\$params = include 'params.php';\nreturn " . str_replace(array('\'{{', '}}\''), '', $configText) . ';';
 
 InstallHelper::createConfig('main', $config, "\$params = include 'params.php';\n");
 InstallHelper::createConfig('console', $config, "\$params = include 'params.php';\n");
+InstallHelper::createConfig('routes', $routes, "\$domain = \$params['domain'];\n");
 InstallHelper::createConfig('params', $params);
+InstallHelper::createConfig('params-dist', $params);
 InstallHelper::createConfig('db', $db);
+InstallHelper::createConfig('db-dist', array('password' => '', 'username' => '') + $db);
 InstallHelper::createConfig('modules');
+
+/**
+ * Fix includes
+ **/
+file_put_contents('protected/yiic.php', str_replace('/../../lib/yii/', '/../lib/yii/', file_get_contents('protected/yiic.php')));
+file_put_contents('www/index.php', str_replace("'/protected/", "'/../protected/", file_get_contents('www/index.php')));
+file_put_contents('www/index-test.php', str_replace("'/protected/", "'/../protected/", file_get_contents('www/index-test.php')));
 
 class InstallHelper
 {
